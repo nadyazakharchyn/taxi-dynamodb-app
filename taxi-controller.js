@@ -22,13 +22,14 @@ const returnQueryResult = async(params)=>{ // performs DynamoDB query with passe
   }
 }; 
 
-const getUserById = async (pk) => { // in user entity, pk = sk
+const getUserById = async (req, res) => { // in user entity, pk = sk
   const params = {
     TableName: TABLE_NAME,
     KeyConditionExpression: "pk = :partitionKey AND sk = :sortKey",
     ExpressionAttributeValues: {
-      ":partitionKey": pk,
-      ":sortKey": pk,
+      // ":partitionKey": pk,
+      // ":sortKey": pk,
+      ":partitionKey": `${req.params.pk}`,
     },
   }
   returnQueryResult(params);
@@ -40,31 +41,40 @@ const getDrivers = async (req, res) => {
       TableName: TABLE_NAME,
       KeyConditionExpression: "pk=:pk",
       ExpressionAttributeValues: {
-        ":pk": "d#1",
+        ":pk": `${req.params.pk}`,
       },
     }).promise();
 
     console.log(result.Items);
-    //res.json(result.Items);
-    return result.Items;
+    res.json(result.Items);
+    //return result.Items;
   } catch (error) {
     console.error("Error querying DynamoDB:", error);
     throw error; 
   }
 };
 
-const getRidesforUser = async (pk) => {
-  //const { pk } = req.params;
+const getRidesforUser = async (req, res) => {
   const params = {
     TableName: TABLE_NAME,
       KeyConditionExpression: "pk=:pk AND begins_with(sk, :sk)",
       ExpressionAttributeValues: {
-        ":pk": "u#"+pk,
+        // ":pk": "u#"+pk,
+        ":pk": "u"+`${req.params.pk}`,
         ":sk": "r",
       }
   }
-  returnQueryResult(params)
-  
+  console.log(`${req.params.pk}`)
+  console.log("u"+`${req.params.pk}`)
+  //returnQueryResult(params)
+  try {
+    const result = await dynamoClient.query(params).promise();
+    console.log(result.Items);
+    res.json(result.Items);
+  } catch (error) {
+    console.error("Error querying DynamoDB:", error);
+    throw error; 
+  }
 };
 
 const getRidesforDriver = async (gsiPKValue) => {
@@ -73,7 +83,7 @@ const getRidesforDriver = async (gsiPKValue) => {
     IndexName: "gsi1",
     KeyConditionExpression: "gsi1_pk = :gsiPK AND begins_with(gsi1_sk, :gsiSK)",
     ExpressionAttributeValues: {
-      ":gsiPK": "d#"+gsiPKValue,
+      ":gsiPK": "d"+gsiPKValue,
       ":gsiSK": "r",
     },
   };
@@ -92,18 +102,20 @@ const getPendingRides = async () => {
   returnQueryResult(params)
 };
 
-const updateRide = async(partitionKeyValue, sortKeyValue, updatedAttributes) => {
+const updateRide = async(req, res) => {
+  const {user_pk, ride_sk, updatedAttributes} = req.body;
+  console.log(req.body);
+  console.log(updatedAttributes);
   const params = {
     TableName: TABLE_NAME,
     Key: {
-      pk: partitionKeyValue,
-      sk: sortKeyValue,
+      pk: user_pk,
+      sk: `${req.params.sk}`,
     },
     UpdateExpression: "SET",
     ExpressionAttributeValues: {},
     ReturnValues: "ALL_NEW", 
   };
-
   // Construct the UpdateExpression and ExpressionAttributeValues based on updatedAttributes
   Object.keys(updatedAttributes).forEach((attributeName, index) => {
     const valueKey = `:value${index}`;
@@ -116,25 +128,25 @@ const updateRide = async(partitionKeyValue, sortKeyValue, updatedAttributes) => 
   
   try {
     const result = await dynamoClient.update(params).promise();
-
-    // Assuming `result.Attributes` contains the updated item
     console.log(result.Attributes);
-
-    // Return the updated item if needed
-    return result.Attributes;
+    res.status(200).send(result.Attributes);
   } catch (error) {
-    console.error("Error updating a ride:", error);
-    throw error; // You may want to handle this error appropriately
+    res.status(500).send("Error updating a ride");
   }
 };
 
-const addRide = async(user_pkValue, pickup_loc, dropoff_loc) => {
+const addPendingRide = async(req, res) => {
+  const {
+    user_pk,
+    pickup_loc,
+    dropoff_loc
+  } = req.body
   var random_sk = require('time-uuid/time');
   const params = {
     TableName: TABLE_NAME,
     Item: {
-      pk: user_pkValue,
-      sk: "r:"+random_sk(),
+      pk: user_pk,
+      sk: "r"+random_sk(),
       gsi2_pk: "Pending",
       entity_type: "ride",
       pickup_location: pickup_loc,
@@ -142,17 +154,20 @@ const addRide = async(user_pkValue, pickup_loc, dropoff_loc) => {
     }
   }
   try {
-
     await dynamoClient.put(params).promise();
     console.log("Record added successfully");
+    res.status(200).send("Record added successfully");
   } catch (error) {
     console.error("Error creating a ride:", error);
-    throw error; // You may want to handle this error appropriately
+    res.status(500).send(`Error adding record: ${error.message}`) // You may want to handle this error appropriately
   }
 }
 
 module.exports = {
-  getDrivers
+  getDrivers, 
+  getRidesforUser,
+  addPendingRide,
+  updateRide
 }
 
 //getDrivers();
