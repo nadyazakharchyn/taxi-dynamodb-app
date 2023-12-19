@@ -104,8 +104,7 @@ const getPendingRides = async () => {
 
 const updateRide = async(req, res) => {
   const {user_pk, ride_sk, updatedAttributes} = req.body;
-  console.log(req.body);
-  console.log(updatedAttributes);
+
   const params = {
     TableName: TABLE_NAME,
     Key: {
@@ -113,6 +112,11 @@ const updateRide = async(req, res) => {
       sk: `${req.params.sk}`,
     },
     UpdateExpression: "SET",
+    ConditionExpression: 'attribute_exists(pk) AND attribute_exists(sk)',
+    ExpressionAttributeValues:{
+      pk: user_pk,
+      sk: `${req.params.sk}`,
+    },
     ExpressionAttributeValues: {},
     ReturnValues: "ALL_NEW", 
   };
@@ -151,6 +155,10 @@ const addPendingRide = async(req, res) => {
       entity_type: "ride",
       pickup_location: pickup_loc,
       dropoff_location: dropoff_loc
+    },
+    ConditionExpression: 'attribute_not_exists(pk)',
+    ExpressionAttributeValues:{
+
     }
   }
   try {
@@ -162,6 +170,24 @@ const addPendingRide = async(req, res) => {
     res.status(500).send(`Error adding record: ${error.message}`) // You may want to handle this error appropriately
   }
 }
+
+// const checkRecordExists = async (pk, sk) => {
+//   const params = {
+//     TableName: TABLE_NAME,
+//     Key: {
+//       pk,
+//       sk,
+//     },
+//   };
+
+//   try {
+//     const result = await dynamoClient.get(params).promise();
+//     return !!result.Item; // Returns true if the item exists, false otherwise
+//   } catch (error) {
+//     handleDynamoDBError(error, 'get item');
+//     throw error;
+//   }
+// };
 
 module.exports = {
   getDrivers, 
