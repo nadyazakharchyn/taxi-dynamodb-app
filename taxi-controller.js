@@ -1,4 +1,5 @@
 const AWS = require("aws-sdk");
+const crypto = require('crypto');
 require('dotenv').config(); 
 
 AWS.config.update({
@@ -27,12 +28,18 @@ const getUserById = async (req, res) => { // in user entity, pk = sk
     TableName: TABLE_NAME,
     KeyConditionExpression: "pk = :partitionKey AND sk = :sortKey",
     ExpressionAttributeValues: {
-      // ":partitionKey": pk,
-      // ":sortKey": pk,
       ":partitionKey": `${req.params.pk}`,
+      ":sortKey":`${req.params.pk}`
     },
   }
-  returnQueryResult(params);
+  try {
+    const result = await dynamoClient.query(params).promise();
+    console.log(result.Items);
+    res.json(result.Items);
+  } catch (error) {
+    console.error("Error querying DynamoDB:", error);
+    throw error; // You may want to handle this error appropriately
+  }
 };
 
 const getDrivers = async (req, res) => {
@@ -54,18 +61,44 @@ const getDrivers = async (req, res) => {
   }
 };
 
+const addUser = async(req, res) => {
+  const { fullName, email, password, phone} = req.body;
+  var random_k = require('time-uuid/time');
+  k = "u"+random_k();
+  const params = {
+    TableName: TABLE_NAME,
+    Item: {
+      pk: k,
+      sk: k,
+      entity_type: "user",
+      name: fullName,
+      email: email,
+      hash_password: crypto.createHash('sha1').update(password).digest('hex'),
+      phone: phone
+    },
+  }
+  try {
+    const result = await dynamoClient.put(params).promise();
+    console.log("User added successfully");
+    res.status(200).send("User added successfully");
+  } catch (error) {
+    console.error("Error creating a user:", error);
+    res.status(500).send(`Error creating a user: ${error.message}`) 
+  }
+}
+
 const getRidesforUser = async (req, res) => {
   const params = {
     TableName: TABLE_NAME,
       KeyConditionExpression: "pk=:pk AND begins_with(sk, :sk)",
       ExpressionAttributeValues: {
         // ":pk": "u#"+pk,
-        ":pk": "u"+`${req.params.pk}`,
+        ":pk": `${req.params.pk}`,
         ":sk": "r",
       }
   }
   console.log(`${req.params.pk}`)
-  console.log("u"+`${req.params.pk}`)
+  console.log(`${req.params.pk}`)
   //returnQueryResult(params)
   try {
     const result = await dynamoClient.query(params).promise();
@@ -77,34 +110,51 @@ const getRidesforUser = async (req, res) => {
   }
 };
 
-const getRidesforDriver = async (gsiPKValue) => {
+const getRidesforDriver = async (req, res) => {
   const params = {
     TableName: TABLE_NAME,
     IndexName: "gsi1",
     KeyConditionExpression: "gsi1_pk = :gsiPK AND begins_with(gsi1_sk, :gsiSK)",
     ExpressionAttributeValues: {
-      ":gsiPK": "d"+gsiPKValue,
-      ":gsiSK": "r",
+      ":gsiPK": `${req.params.gsi1_pk}`,
+      ":gsiSK": "r"
     },
   };
-  returnQueryResult(params)
+  try {
+    const result = await dynamoClient.query(params).promise();
+    console.log(result.Items);
+    res.json(result.Items);
+  } catch (error) {
+    console.error("Error querying DynamoDB:", error);
+    res.status(500).send("Error getting driver rides");
+    throw error; // You may want to handle this error appropriately
+  }
 };
 
-const getPendingRides = async () => {
+const getPendingRides = async (req, res) => {
   const params = {
     TableName: TABLE_NAME,
     IndexName: "gsi2",
-    KeyConditionExpression: "gsi2_pk = :gsiPK",
+    KeyConditionExpression: "gsi2_pk = :gsiPK AND begins_with(gsi2_sk, :gsiSK)",
     ExpressionAttributeValues: {
       ":gsiPK": "Pending",
+      ":gsiSK": "r"
     },
   };
-  returnQueryResult(params)
+  try {
+    const result = await dynamoClient.query(params).promise();
+    console.log(result.Items);
+    res.json(result.Items);
+  } catch (error) {
+    console.error("Error querying DynamoDB:", error);
+    res.status(500).send("Error getting pending rides");
+    throw error; // You may want to handle this error appropriately
+  }
 };
+
 
 const updateRide = async(req, res) => {
   const {user_pk, ride_sk, updatedAttributes} = req.body;
-
   const params = {
     TableName: TABLE_NAME,
     Key: {
@@ -139,63 +189,83 @@ const updateRide = async(req, res) => {
   }
 };
 
+
+
 const addPendingRide = async(req, res) => {
   const {
-    user_pk,
     pickup_loc,
     dropoff_loc
-  } = req.body
+  } = req.body;
+  user_pk = `${req.params.user_pk}`;
   var random_sk = require('time-uuid/time');
+  rand_sk = "r"+random_sk();
   const params = {
     TableName: TABLE_NAME,
     Item: {
       pk: user_pk,
-      sk: "r"+random_sk(),
+      sk: rand_sk,
       gsi2_pk: "Pending",
+      gsi2_sk: rand_sk,
       entity_type: "ride",
       pickup_location: pickup_loc,
       dropoff_location: dropoff_loc
     },
-    ConditionExpression: 'attribute_not_exists(pk)',
-    ExpressionAttributeValues:{
+    ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+  }
 
+  if (checkPendingBookedRides(user_pk)==true){
+    console.log("User already has a pending or booked ride");
+    res.status(400).send("User already has a pending or booked ride");
+  } else {
+    try {
+      await dynamoClient.put(params).promise();
+      console.log("Record added successfully");
+      res.status(200).send("Ride created successfully");
+    } catch (error) {
+      console.error("Error creating a ride:", error);
+      res.status(500).send(`Error creating a ride: ${error.message}`) 
     }
   }
+  
+}
+
+const checkPendingBookedRides = async (pk) => {
+  const params ={
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "pk = :pk",
+    FilterExpression: "gsi2_pk = :status1 OR gsi2_pk = :status2",
+    ExpressionAttributeValues: {
+      ":pk": pk,
+      ":status1": "Pending",
+      ":status2": "Booked"
+    },
+  }
   try {
-    await dynamoClient.put(params).promise();
-    console.log("Record added successfully");
-    res.status(200).send("Record added successfully");
+    const result = await dynamoClient.query(params).promise();
+    console.log(result.Count);
+    console.log(result.Count!=0);
+    return (result.Count!=0);
+    
   } catch (error) {
-    console.error("Error creating a ride:", error);
-    res.status(500).send(`Error adding record: ${error.message}`) // You may want to handle this error appropriately
+    console.error("Error checking pending/booked rides:", error);
+    throw error; 
   }
 }
 
-// const checkRecordExists = async (pk, sk) => {
-//   const params = {
-//     TableName: TABLE_NAME,
-//     Key: {
-//       pk,
-//       sk,
-//     },
-//   };
+//checkPendingBookedRides("u1703023895286087");
 
-//   try {
-//     const result = await dynamoClient.get(params).promise();
-//     return !!result.Item; // Returns true if the item exists, false otherwise
-//   } catch (error) {
-//     handleDynamoDBError(error, 'get item');
-//     throw error;
-//   }
-// };
 
 module.exports = {
+  getUserById,
   getDrivers, 
   getRidesforUser,
   addPendingRide,
-  updateRide
-}
-
+  updateRide, 
+  checkPendingBookedRides,
+  addUser,
+  getPendingRides,
+  getRidesforDriver
+};
 //getDrivers();
 //getUsers();
 //getRides();
