@@ -23,6 +23,25 @@ const returnQueryResult = async(params)=>{ // performs DynamoDB query with passe
   }
 }; 
 
+const getUsers = async(req, res) => {
+  const params = {
+    TableName: TABLE_NAME,
+    FilterExpression:"#entity_type = :entity_type",
+    ExpressionAttributeNames: { "#entity_type": "entity_type"},
+    ExpressionAttributeValues: {
+      ":entity_type": "user"
+    },
+  }
+  try {
+    const result = await dynamoClient.scan(params).promise();
+    console.log(result.Items);
+    res.json(result.Items);
+  } catch (error) {
+    console.error("Error scanning DynamoDB:", error);
+    throw error; // You may want to handle this error appropriately
+  }
+}
+
 const getUserById = async (req, res) => { // in user entity, pk = sk
   const params = {
     TableName: TABLE_NAME,
@@ -42,7 +61,35 @@ const getUserById = async (req, res) => { // in user entity, pk = sk
   }
 };
 
-const getDrivers = async (req, res) => {
+const deleteUserById = async(req, res) => {
+  //const pk = `${req.params.pk}`;
+  //const sk = `${req.params.pk}`;
+  const params = {
+    TableName: TABLE_NAME,
+    // KeyConditionExpression: "pk = :partitionKey AND sk = :sortKey",
+    // ExpressionAttributeValues: {
+    //   ":partitionKey": `${req.params.pk}`,
+    //   ":sortKey":`${req.params.pk}`
+    // },
+    Key: {
+      pk: `${req.params.pk}`,
+      sk: `${req.params.pk}`
+    },
+  };
+
+  try {
+    //const result = await dynamoClient.delete(params).promise;
+    const response = await dynamoClient.delete(params).promise;
+    console.log(response);
+    res.status(200).send("User deleted successfully");
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    throw error; // You may want to handle this error appropriately
+  }
+  
+ }
+
+const getDriverById = async (req, res) => {
   try {
     const result = await dynamoClient.query({
       TableName: TABLE_NAME,
@@ -162,7 +209,7 @@ const updateRide = async(req, res) => {
       sk: `${req.params.sk}`,
     },
     UpdateExpression: "SET",
-    ConditionExpression: 'attribute_exists(pk) AND attribute_exists(sk)',
+    //ConditionExpression: 'attribute_exists(pk) AND attribute_exists(sk)',
     ExpressionAttributeValues:{
       pk: user_pk,
       sk: `${req.params.sk}`,
@@ -185,11 +232,10 @@ const updateRide = async(req, res) => {
     console.log(result.Attributes);
     res.status(200).send(result.Attributes);
   } catch (error) {
+    console.log(error);
     res.status(500).send("Error updating a ride");
   }
 };
-
-
 
 const addPendingRide = async(req, res) => {
   const {
@@ -229,6 +275,74 @@ const addPendingRide = async(req, res) => {
   
 }
 
+
+// const addPendingRide = async(req, res) => {
+//   const {
+//     pickup_loc,
+//     dropoff_loc
+//   } = req.body;
+//   user_pk = `${req.params.user_pk}`;
+//   var random_sk = require('time-uuid/time');
+//   rand_sk = "r"+random_sk();
+//   const params = {
+//     TableName: TABLE_NAME,
+//     Item: {
+//       pk: user_pk,
+//       sk: rand_sk,
+//       gsi2_pk: "Pending",
+//       gsi2_sk: rand_sk,
+//       entity_type: "ride",
+//       pickup_location: pickup_loc,
+//       dropoff_location: dropoff_loc
+//     },
+//     //ConditionExpression: 'attribute_exists(pk)',
+//   }
+//   console.log(user_pk);
+//   pending_exists=checkPendingBookedRides(user_pk);
+//   console.log(pending_exists);
+//   if (pending_exists==true){
+//     console.log("User already has a pending or booked ride");
+//     res.status(400).send("User already has a pending or booked ride");
+//   } else {
+//     try {
+//       await dynamoClient.put(params).promise();
+//       console.log("Record added successfully");
+//       res.status(200).send("Ride created successfully");
+//     } catch (error) {
+//       console.error("Error creating a ride:", error);
+//       res.status(500).send(`Error creating a ride: ${error.message}`) 
+//     }
+//   }
+  
+// }
+
+// const checkPendingBookedRides = async (pk) => {
+//   const params ={
+//     TableName: TABLE_NAME,
+//     KeyConditionExpression: "pk = :pk",
+//     FilterExpression: "gsi2_pk = :status1 OR gsi2_pk = :status2",
+//     ExpressionAttributeValues: {
+//       ":pk": pk,
+//       ":status1": "Pending",
+//       ":status2": "Booked"
+//     },
+//   }
+//   try {
+//     const result = await dynamoClient.query(params).promise();
+//     console.log(result.Count);
+//     console.log(result.Count!=0);
+//     // if (result.Count!=0){
+//     //   return true;
+//     // }
+//     // else {return false};
+//     return (result.Count!=0);
+    
+//   } catch (error) {
+//     console.error("Error checking pending/booked rides:", error);
+//     throw error; 
+//   }
+// }
+
 const checkPendingBookedRides = async (pk) => {
   const params ={
     TableName: TABLE_NAME,
@@ -251,20 +365,21 @@ const checkPendingBookedRides = async (pk) => {
     throw error; 
   }
 }
-
 //checkPendingBookedRides("u1703023895286087");
 
 
 module.exports = {
   getUserById,
-  getDrivers, 
+  getDriverById, 
   getRidesforUser,
   addPendingRide,
   updateRide, 
   checkPendingBookedRides,
   addUser,
   getPendingRides,
-  getRidesforDriver
+  getRidesforDriver,
+  getUsers,
+  deleteUserById
 };
 //getDrivers();
 //getUsers();

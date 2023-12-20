@@ -1,7 +1,5 @@
 const express = require ('express');
-//const router = express.Router();
 const app = express()
-//const controller = require('./taxi-controller')
 const router = require('./taxi-router.js')
 
 app.get('/', (req, res)=>{
